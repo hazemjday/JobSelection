@@ -1,25 +1,33 @@
 import logging
 from flask import Flask
-from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
+from flask_jwt_extended import JWTManager, get_jwt, jwt_required, create_access_token, get_jwt_identity
 from flask_sqlalchemy import SQLAlchemy
 import os
-
-
+import time
+import socket
+from flask_cors import CORS 
 logging.basicConfig(level=logging.INFO) 
+from flask import Flask, request, jsonify
+from datetime import timedelta
+from sqlalchemy.exc import SQLAlchemyError
 
 app = Flask(__name__)
+CORS(app, origins=["http://localhost:3000"])
 # Connexion à MySQL via variables d’environnement
-DB_USER = os.getenv("DB_USER", "flaskuser")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "flaskpass")
-DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_USER = os.getenv("DB_USER", "hazem")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "hazem")
+DB_HOST = os.getenv("DB_HOST", "mysql")
 DB_PORT = os.getenv("DB_PORT", "3306")
-DB_NAME = os.getenv("DB_NAME", "flaskdb")
+DB_NAME = os.getenv("DB_NAME", "users")
 
 # Format : mysql+pymysql://user:password@host:port/dbname
 app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
+app.config['JWT_SECRET_KEY'] = 'votre_cle_secrete'
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
 db = SQLAlchemy(app)
+jwt = JWTManager(app)
+
 # Modèle User
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -28,8 +36,20 @@ class User(db.Model):
     role = db.Column(db.String(20), nullable=False, default='user')
 
 
+def wait_for_mysql(host, port):
+    while True:
+        try:
+            socket.create_connection((host, int(port)), timeout=5)
+            print(" MySQL est prêt.")
+            break
+        except OSError:
+            print("En attente de MySQL...")
+            time.sleep(2)
+
+
 
 with app.app_context():
+    wait_for_mysql(DB_HOST, DB_PORT)
     db.create_all()
 
 
@@ -46,7 +66,6 @@ def register():
         current_user = get_jwt_identity()
         claims = get_jwt() 
         app.logger.info(f"Utilisateur actuel: {current_user}")
-        
         # Vérification des privilèges admin
         if claims.get('role') != "admin":
             app.logger.warning(f"Tentative non autorisée par {current_user}")
@@ -54,10 +73,9 @@ def register():
                 "msg": "Accès refusé",
                 "error": "admin_privilege_required",
                 "required_role": "admin"
-            }), 403
-        
-        # Validation des données
+            }), 403           
         data = request.get_json()
+
         if not data:
             app.logger.error("Aucune donnée JSON reçue")
             return jsonify({"msg": "Données manquantes"}), 400
@@ -122,7 +140,7 @@ def register():
         }), 500
 
 
-#loàgin et reception de jwttoken
+#login et reception de jwttoken
 @app.route('/login', methods=['POST'])
 def login():
     try:
@@ -159,13 +177,13 @@ def login():
         access_token = create_access_token(
            identity=user.username,  # doit être une string
           additional_claims={"role": user.role
-                             }  # ici tu ajoutes les infos supplémentaires
+                             }  
            )
         app.logger.info(f"Connexion réussie pour {username}")
 
         # Réponse
         return jsonify({
-            "access_token": access_token,
+            "token": access_token,
             "token_type": "bearer",
             "user": {
                 "id": user.id,

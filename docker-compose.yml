@@ -14,16 +14,21 @@ services:
       - DB_USER=hazem
       - DB_PASSWORD=hazem
 
+
   frontend:
     build: ./frontend
     container_name: react_frontend
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     depends_on:
       - backend
+    environment:
+      NODE_ENV: development
+    stdin_open: true
+    tty: true
+    command: npm start
+
+
 
       
   mysql:
